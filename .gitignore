@@ -1,0 +1,6 @@
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+player/src/main/jniLibs/arm64-v8a/libretro_core.so

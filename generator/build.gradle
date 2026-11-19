@@ -1,0 +1,71 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.ndspack.generator'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.ndspack.generator'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        release {
+            // chave de teste embutida: serve tanto para o gerador quanto para os jogos gerados
+            storeFile file('src/main/assets/signing.p12')
+            storeType 'pkcs12'
+            storePassword 'ndspack'
+            keyAlias 'ndspack'
+            keyPassword 'ndspack'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // o modelo de APK e a ROM nao devem ser comprimidos/alterados pelo empacotador
+    androidResources {
+        noCompress 'apk', 'p12'
+    }
+}
+
+dependencies {
+    implementation 'com.android.tools.build:apksig:8.7.3'
+}
+
+// Compila o player e copia o APK resultante para dentro do gerador como assets/template.apk
+def playerRelease = tasks.register('copyPlayerTemplate', Copy) {
+    dependsOn ':player:assembleRelease'
+    from(project(':player').layout.buildDirectory.dir('outputs/apk/release')) {
+        include '*.apk'
+    }
+    into layout.buildDirectory.dir('generated/template-assets')
+    rename { 'template.apk' }
+}
+
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/template-assets'))
+
+tasks.configureEach { task ->
+    if (task.name.startsWith('merge') && task.name.endsWith('Assets')) {
+        task.dependsOn playerRelease
+    }
+}
