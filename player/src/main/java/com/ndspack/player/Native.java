@@ -38,4 +38,10 @@ final class Native {
     static native boolean saveState(String path);
 
     static native boolean loadState(String path);
+
+    /** Linhas "chave\tdescricao\tatual\topcao1|opcao2". */
+    static native String[] getOptions();
+
+    /** Atualiza a opcao em memoria (o arquivo e gravado por optSet). */
+    static native void setOption(String key, String value);
 }

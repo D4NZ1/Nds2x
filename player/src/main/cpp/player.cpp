@@ -158,6 +158,10 @@ std::mutex g_coreMutex;  // protege chamadas ao nucleo (retro_run x serializacao
 
 std::string g_systemDir, g_saveDir, g_romPath, g_corePath;
 std::map<std::string, std::string> g_options;
+std::mutex g_optMutex;
+std::set<std::string> g_optPool;
+std::vector<std::pair<std::string, std::string>> g_optDefs;
+std::atomic<bool> g_optDirty{false};
 int g_pixelFormat = PIXEL_XRGB8888;
 
 std::atomic<int> g_inputMask{0};
@@ -421,10 +425,16 @@ bool environment(unsigned cmd, void* data) {
             }
             return false;
         }
-        case ENV_SET_VARIABLES:
-            return true;  // as opcoes ficam nos padroes do nucleo
+        case ENV_SET_VARIABLES: {
+            std::lock_guard<std::mutex> lk(g_optMutex);
+            g_optDefs.clear();
+            for (const retro_variable* sv = static_cast<const retro_variable*>(data); sv && sv->key; ++sv)
+                g_optDefs.emplace_back(sv->key, sv->value ? sv->value : "");
+            return true;
+        }
         case ENV_GET_VARIABLE: {
             retro_variable* v = static_cast<retro_variable*>(data);
+            std::lock_guard<std::mutex> lk(g_optMutex);
             auto it = g_options.find(v->key ? v->key : "");
             static std::set<std::string> asked;
             if (asked.insert(v->key ? v->key : "").second) {
@@ -432,14 +442,14 @@ bool environment(unsigned cmd, void* data) {
                      it != g_options.end() ? it->second.c_str() : "padrao do nucleo");
             }
             if (it != g_options.end()) {
-                v->value = it->second.c_str();
+                v->value = g_optPool.insert(it->second).first->c_str();
                 return true;
             }
             v->value = nullptr;
             return false;
         }
         case ENV_GET_VARIABLE_UPDATE:
-            *static_cast<bool*>(data) = false;
+            *static_cast<bool*>(data) = g_optDirty.exchange(false);
             return true;
         case ENV_GET_LOG_INTERFACE:
             static_cast<retro_log_callback*>(data)->log = coreLog;
@@ -822,3 +832,33 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_loadState(JNIEnv* env,
 }
 
 }  // extern "C"
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_ndspack_player_Native_getOptions(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lk(g_optMutex);
+    jclass sc = env->FindClass("java/lang/String");
+    jobjectArray arr = env->NewObjectArray((jsize)g_optDefs.size(), sc, nullptr);
+    for (size_t i = 0; i < g_optDefs.size(); i++) {
+        const std::string& key = g_optDefs[i].first;
+        const std::string& def = g_optDefs[i].second;
+        size_t semi = def.find("; ");
+        std::string desc = semi == std::string::npos ? key : def.substr(0, semi);
+        std::string opts = semi == std::string::npos ? std::string() : def.substr(semi + 2);
+        auto it = g_options.find(key);
+        std::string cur = it != g_options.end() ? it->second : opts.substr(0, opts.find('|'));
+        std::string row = key + "\t" + desc + "\t" + cur + "\t" + opts;
+        env->SetObjectArrayElement(arr, (jsize)i, env->NewStringUTF(row.c_str()));
+    }
+    return arr;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_ndspack_player_Native_setOption(JNIEnv* env, jclass, jstring jKey, jstring jVal) {
+    const char* k = env->GetStringUTFChars(jKey, nullptr);
+    const char* v = env->GetStringUTFChars(jVal, nullptr);
+    {
+        std::lock_guard<std::mutex> lk(g_optMutex);
+        g_options[k] = v;
+        g_optDirty = true;
+    }
+    env->ReleaseStringUTFChars(jKey, k);
+    env->ReleaseStringUTFChars(jVal, v);
+}

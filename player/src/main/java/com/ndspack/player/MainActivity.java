@@ -363,6 +363,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             "Render em thread: " + optLabel("melonds_threaded_renderer") + " (reinicia)",
             "Boot direto: " + optLabel("melonds_boot_directly") + " (reinicia)",
             "Importar BIOS/firmware",
+            "Configurações do núcleo",
             "Sair do jogo"
         };
         AlertDialog d = new AlertDialog.Builder(this)
@@ -393,7 +394,8 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                         case 9:
                             pickBios();
                             return;
-                        case 10:
+                        case 10: openSettings(); return;
+                        case 11:
                             finish();
                             return;
                         default:
@@ -520,6 +522,41 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             }
         }
         return null;
+    }
+
+    private void openSettings() {
+        final String[] rows = Native.getOptions();
+        if (rows.length == 0) {
+            Toast.makeText(this, "O núcleo não listou opções", Toast.LENGTH_LONG).show();
+            closeMenu();
+            return;
+        }
+        String[] labels = new String[rows.length];
+        for (int i = 0; i < rows.length; i++) {
+            String[] p = rows[i].split("\t", -1);
+            labels[i] = p[1] + ": " + p[2];
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Configurações do núcleo")
+                .setItems(labels, (dialog, which) -> pickOption(rows[which].split("\t", -1)))
+                .setOnCancelListener(dialog -> closeMenu())
+                .show();
+    }
+
+    private void pickOption(final String[] p) {
+        final String[] vals = p[3].split("\\|");
+        int cur = 0;
+        for (int i = 0; i < vals.length; i++) if (vals[i].equals(p[2])) cur = i;
+        new AlertDialog.Builder(this)
+                .setTitle(p[1])
+                .setSingleChoiceItems(vals, cur, (dialog, which) -> {
+                    optSet(p[0], vals[which]);
+                    Native.setOption(p[0], vals[which]);
+                    dialog.dismiss();
+                    openSettings();
+                })
+                .setOnCancelListener(dialog -> openSettings())
+                .show();
     }
 
     private String optLabel(String key) {
