@@ -53,7 +53,8 @@ L1/R1, Start/Select, botão Home do controle abre o menu.
 * **BIOS/firmware:** opcionais. Sem eles o melonDS usa a BIOS livre embutida. Para usar os
   reais, copie `bios7.bin`, `bios9.bin` e `firmware.bin` para
   `Android/data/<pacote do jogo>/files/system/`.
-* **Opções do núcleo:** crie `core_options.txt` na pasta de dados internos do app com linhas
+* **Log:** o jogo grava `Android/data/<pacote do jogo>/files/log.txt` (núcleo, opções pedidas e cores dos quadros).
+* **Opções do núcleo:** edite `core_options.txt` em `Android/data/<pacote do jogo>/files/` (criado na primeira abertura) com linhas
   `chave = valor` (as chaves são as do núcleo, ex. `melonds_screen_layout = ...`). Sem o
   arquivo valem os padrões do núcleo.
 * **Tamanho:** o APK tem o tamanho da ROM + ~20 MB. Na primeira abertura a ROM é extraída

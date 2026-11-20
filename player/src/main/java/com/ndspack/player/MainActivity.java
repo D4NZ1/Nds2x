@@ -121,7 +121,17 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             File sys = getExternalFilesDir("system");
             if (sys == null) sys = new File(getFilesDir(), "system");
             sys.mkdirs();
-            File options = new File(getFilesDir(), "core_options.txt");
+            File ext = getExternalFilesDir(null);
+            File options = new File(ext != null ? ext : getFilesDir(), "core_options.txt");
+            if (!options.exists()) {
+                String tpl = "# Opcoes do nucleo: uma por linha, chave = valor.\n"
+                        + "# As chaves que o nucleo pede aparecem em log.txt (linhas 'opcao pedida').\n";
+                try (OutputStream o = new FileOutputStream(options)) {
+                    o.write(tpl.getBytes("UTF-8"));
+                } catch (IOException ignored) {
+                    // sem arquivo de opcoes: valem os padroes do nucleo
+                }
+            }
 
             boolean ok = Native.init(core.getAbsolutePath(), rom.getAbsolutePath(), sys.getAbsolutePath(),
                     saves.getAbsolutePath(), options.getAbsolutePath());

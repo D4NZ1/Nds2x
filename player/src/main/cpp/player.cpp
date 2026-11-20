@@ -20,14 +20,32 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#define LOG_TAG "NdsPlayer"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+// Log no logcat e tambem em <pasta do app>/files/log.txt (legivel sem adb).
+static FILE* g_logf = nullptr;
+static std::mutex g_logMutex;
+static void flog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+static void flog(const char* fmt, ...) {
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    __android_log_print(ANDROID_LOG_INFO, "NdsPlayer", "%s", buf);
+    std::lock_guard<std::mutex> lk(g_logMutex);
+    if (g_logf) {
+        fputs(buf, g_logf);
+        fputc('\n', g_logf);
+        fflush(g_logf);
+    }
+}
+#define LOGI(...) flog(__VA_ARGS__)
+#define LOGE(...) flog("ERRO: " __VA_ARGS__)
 
 // ---------------------------------------------------------------- libretro ABI
 namespace {
@@ -259,11 +277,42 @@ void audioSample(int16_t l, int16_t r) {
 }
 
 // ------------------------------------------------------------------ video
+// Amostra 16x16 pixels do quadro bruto do nucleo e registra no log (diagnostico de tela branca).
+void logFrameStats(unsigned long long n, const void* data, unsigned w, unsigned h, size_t pitch) {
+    std::set<uint32_t> colors;
+    uint32_t first = 0, top = 0, bottom = 0;
+    for (unsigned gy = 0; gy < 16; gy++) {
+        for (unsigned gx = 0; gx < 16; gx++) {
+            unsigned x = w > 1 ? gx * (w - 1) / 15 : 0;
+            unsigned y = h > 1 ? gy * (h - 1) / 15 : 0;
+            const uint8_t* row = static_cast<const uint8_t*>(data) + (size_t)y * pitch;
+            uint32_t p = (g_pixelFormat == PIXEL_XRGB8888)
+                             ? reinterpret_cast<const uint32_t*>(row)[x]
+                             : (uint32_t)reinterpret_cast<const uint16_t*>(row)[x];
+            colors.insert(p);
+            if (gx == 0 && gy == 0) first = p;
+            if (gx == 8 && gy == 4) top = p;
+            if (gx == 8 && gy == 11) bottom = p;
+        }
+    }
+    flog("quadro %llu: %ux%u pitch=%zu formato=%d cores_distintas(de 256)=%zu primeiro=%08x topo=%08x base=%08x janela=%s",
+         n, w, h, pitch, g_pixelFormat, colors.size(), first, top, bottom, g_window ? "ok" : "AUSENTE");
+}
+
 void videoRefresh(const void* data, unsigned width, unsigned height, size_t pitch) {
     if (!data || width == 0 || height == 0) return;  // frame duplicado
+    static unsigned long long frameNo = 0;
+    frameNo++;
+    if (data == reinterpret_cast<const void*>(-1)) {  // RETRO_HW_FRAME_BUFFER_VALID: render por GPU, nao suportado aqui
+        if (frameNo == 1) flog("ERRO: o nucleo entregou quadro de HW render (nao suportado por este frontend)");
+        return;
+    }
     g_frameW = (int)width;
     g_frameH = (int)height;
     std::lock_guard<std::mutex> lk(g_winMutex);
+    if (frameNo == 1 || frameNo == 120 || frameNo == 600 || frameNo == 1800) {
+        logFrameStats(frameNo, data, width, height, pitch);
+    }
     if (!g_window) return;
     if (g_winW != (int)width || g_winH != (int)height) {
         ANativeWindow_setBuffersGeometry(g_window, (int)width, (int)height, WINDOW_FORMAT_RGBX_8888);
@@ -338,6 +387,7 @@ void coreLog(int level, const char* fmt, ...) {
     else if (level == 2) prio = ANDROID_LOG_WARN;
     else if (level == 3) prio = ANDROID_LOG_ERROR;
     __android_log_print(prio, "NdsCore", "%s", buf);
+    flog("[nucleo] %s", buf);
 }
 
 bool environment(unsigned cmd, void* data) {
@@ -371,6 +421,11 @@ bool environment(unsigned cmd, void* data) {
         case ENV_GET_VARIABLE: {
             retro_variable* v = static_cast<retro_variable*>(data);
             auto it = g_options.find(v->key ? v->key : "");
+            static std::set<std::string> asked;
+            if (asked.insert(v->key ? v->key : "").second) {
+                flog("opcao pedida pelo nucleo: %s (%s)", v->key ? v->key : "?",
+                     it != g_options.end() ? it->second.c_str() : "padrao do nucleo");
+            }
             if (it != g_options.end()) {
                 v->value = it->second.c_str();
                 return true;
@@ -403,8 +458,11 @@ bool environment(unsigned cmd, void* data) {
         case ENV_GET_JIT_CAPABLE:
             *static_cast<bool*>(data) = true;
             return true;
-        default:
+        default: {
+            static std::set<unsigned> seen;
+            if (seen.insert(cmd).second) flog("comando de ambiente nao tratado: %u", cmd);
             return false;
+        }
     }
 }
 
@@ -580,6 +638,9 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_init(JNIEnv* env, jcla
     g_romPath = str(jRom);
     g_systemDir = str(jSysDir);
     g_saveDir = str(jSaveDir);
+    if (!g_logf) g_logf = fopen((g_systemDir + "/../log.txt").c_str(), "w");
+    flog("player iniciado. nucleo=%s", g_corePath.c_str());
+    flog("rom=%s opcoes=%s", g_romPath.c_str(), str(jOptions).c_str());
     loadOptionsFile(str(jOptions));
 
     g_core.handle = dlopen(g_corePath.c_str(), RTLD_NOW | RTLD_LOCAL);
@@ -603,7 +664,9 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_init(JNIEnv* env, jcla
 
     retro_system_info info{};
     g_core.get_system_info(&info);
-    LOGI("nucleo: %s %s", info.library_name ? info.library_name : "?", info.library_version ? info.library_version : "?");
+    LOGI("nucleo: %s %s need_fullpath=%d ext=%s", info.library_name ? info.library_name : "?",
+         info.library_version ? info.library_version : "?", info.need_fullpath ? 1 : 0,
+         info.valid_extensions ? info.valid_extensions : "?");
 
     retro_game_info game{};
     game.path = g_romPath.c_str();

@@ -23,18 +23,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@v3
 
       - name: Instalar SDK, NDK e CMake
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Testes (AXML, ROM NDS e montagem do APK)
-        run: bash tests/run.sh
+        run: tests/run.sh
 
       - name: Baixar o nucleo melonDS
         env:
           CORE_NAMES: ${{ github.event.inputs.core_names || 'melonds melondsds' }}
-        run: bash tools/fetch_core.sh
+        run: tools/fetch_core.sh
 
       - uses: gradle/actions/setup-gradle@v4
         with:
