@@ -392,7 +392,17 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
 
     private void showLog() {
         File ext = getExternalFilesDir(null);
-        String txt = readTail(new File(ext != null ? ext : getFilesDir(), "log.txt"), 4000);
+        String txt;
+        try {
+            txt = Native.getLog();
+        } catch (Throwable t) {
+            txt = null;
+        }
+        if (txt == null || txt.isEmpty()) {
+            txt = readTail(new File(ext != null ? ext : getFilesDir(), "log.txt"), 6000);
+        } else if (txt.length() > 6000) {
+            txt = txt.substring(txt.length() - 6000);
+        }
         TextView tv = new TextView(this);
         tv.setText(txt.isEmpty() ? "(log vazio)" : txt);
         tv.setTextSize(10f);

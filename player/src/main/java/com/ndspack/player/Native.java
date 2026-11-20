@@ -14,6 +14,9 @@ final class Native {
 
     static native int[] getVideoSize();
 
+    /** Log do frontend e do nucleo guardado em memoria. */
+    static native String getLog();
+
     static native void setSurface(Surface surface);
 
     static native void start();

@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cerrno>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +30,7 @@
 // Log no logcat e tambem em <pasta do app>/files/log.txt (legivel sem adb).
 static FILE* g_logf = nullptr;
 static std::mutex g_logMutex;
+static std::string g_logBuf;  // copia em memoria, lida pelo menu "Ver log"
 static void flog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void flog(const char* fmt, ...) {
     char buf[1024];
@@ -38,6 +40,9 @@ static void flog(const char* fmt, ...) {
     va_end(ap);
     __android_log_print(ANDROID_LOG_INFO, "NdsPlayer", "%s", buf);
     std::lock_guard<std::mutex> lk(g_logMutex);
+    g_logBuf += buf;
+    g_logBuf += '\n';
+    if (g_logBuf.size() > 40000) g_logBuf.erase(0, g_logBuf.size() - 30000);
     if (g_logf) {
         fputs(buf, g_logf);
         fputc('\n', g_logf);
@@ -639,6 +644,7 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_init(JNIEnv* env, jcla
     g_systemDir = str(jSysDir);
     g_saveDir = str(jSaveDir);
     if (!g_logf) g_logf = fopen((g_systemDir + "/../log.txt").c_str(), "w");
+    if (!g_logf) flog("aviso: nao consegui abrir log.txt (errno=%d)", errno);
     flog("player iniciado. nucleo=%s", g_corePath.c_str());
     flog("rom=%s opcoes=%s", g_romPath.c_str(), str(jOptions).c_str());
     loadOptionsFile(str(jOptions));
@@ -693,6 +699,19 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_init(JNIEnv* env, jcla
     LOGI("jogo carregado: %ux%u @ %.3f fps, audio %.0f Hz", g_av.geometry.base_width,
          g_av.geometry.base_height, g_av.timing.fps, g_av.timing.sample_rate);
     return JNI_TRUE;
+}
+
+JNIEXPORT jstring JNICALL Java_com_ndspack_player_Native_getLog(JNIEnv* env, jclass) {
+    std::string s;
+    {
+        std::lock_guard<std::mutex> lk(g_logMutex);
+        s = g_logBuf;
+    }
+    for (char& c : s) {
+        unsigned char u = (unsigned char)c;
+        if (u >= 0x80 || (u < 0x20 && c != '\n')) c = '?';
+    }
+    return env->NewStringUTF(s.c_str());
 }
 
 JNIEXPORT jintArray JNICALL Java_com_ndspack_player_Native_getVideoSize(JNIEnv* env, jclass) {
