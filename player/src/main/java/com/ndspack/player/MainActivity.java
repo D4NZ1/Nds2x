@@ -358,6 +358,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             "Carregar estado",
             "Reiniciar o jogo",
             fastForward ? "Avanço rápido: ligado" : "Avanço rápido: desligado",
+            "Ver log",
             "Sair do jogo"
         };
         AlertDialog d = new AlertDialog.Builder(this)
@@ -374,6 +375,9 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                             Native.setFastForward(fastForward);
                             break;
                         case 5:
+                            showLog();
+                            return;
+                        case 6:
                             finish();
                             return;
                         default:
@@ -384,6 +388,38 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 .setOnCancelListener(dialog -> closeMenu())
                 .create();
         d.show();
+    }
+
+    private void showLog() {
+        File ext = getExternalFilesDir(null);
+        String txt = readTail(new File(ext != null ? ext : getFilesDir(), "log.txt"), 4000);
+        TextView tv = new TextView(this);
+        tv.setText(txt.isEmpty() ? "(log vazio)" : txt);
+        tv.setTextSize(10f);
+        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setPadding(24, 24, 24, 24);
+        tv.setTextIsSelectable(true);
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.addView(tv);
+        new AlertDialog.Builder(this)
+                .setTitle("Log")
+                .setView(sv)
+                .setPositiveButton("Fechar", null)
+                .setOnDismissListener(dialog -> closeMenu())
+                .show();
+    }
+
+    private static String readTail(File f, int max) {
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[8192];
+            int n;
+            while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+            String s = bo.toString("UTF-8");
+            return s.length() > max ? s.substring(s.length() - max) : s;
+        } catch (IOException e) {
+            return "erro ao ler o log: " + e.getMessage();
+        }
     }
 
     private void closeMenu() {
