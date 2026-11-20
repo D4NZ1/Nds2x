@@ -361,6 +361,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             "Ver log",
             "JIT: " + optLabel("melonds_jit_enable") + " (reinicia)",
             "Render em thread: " + optLabel("melonds_threaded_renderer") + " (reinicia)",
+            "Boot direto: " + optLabel("melonds_boot_directly") + " (reinicia)",
             "Importar BIOS/firmware",
             "Sair do jogo"
         };
@@ -387,9 +388,12 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                             toggleOpt("melonds_threaded_renderer");
                             return;
                         case 8:
-                            pickBios();
+                            toggleOpt("melonds_boot_directly");
                             return;
                         case 9:
+                            pickBios();
+                            return;
+                        case 10:
                             finish();
                             return;
                         default:
