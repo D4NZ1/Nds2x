@@ -361,6 +361,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             "Ver log",
             "JIT: " + optLabel("melonds_jit_enable") + " (reinicia)",
             "Render em thread: " + optLabel("melonds_threaded_renderer") + " (reinicia)",
+            "Importar BIOS/firmware",
             "Sair do jogo"
         };
         AlertDialog d = new AlertDialog.Builder(this)
@@ -386,6 +387,9 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                             toggleOpt("melonds_threaded_renderer");
                             return;
                         case 8:
+                            pickBios();
+                            return;
+                        case 9:
                             finish();
                             return;
                         default:
@@ -396,6 +400,93 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 .setOnCancelListener(dialog -> closeMenu())
                 .create();
         d.show();
+    }
+
+    // ------------------------------------------------------------------ BIOS / firmware
+    private static final int REQ_BIOS = 77;
+
+    private File systemDir() {
+        File sys = getExternalFilesDir("system");
+        if (sys == null) sys = new File(getFilesDir(), "system");
+        sys.mkdirs();
+        return sys;
+    }
+
+    private void pickBios() {
+        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true);
+        startActivityForResult(i, REQ_BIOS);
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, android.content.Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_BIOS) return;
+        java.util.ArrayList<android.net.Uri> uris = new java.util.ArrayList<>();
+        if (res == RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                for (int k = 0; k < data.getClipData().getItemCount(); k++) {
+                    uris.add(data.getClipData().getItemAt(k).getUri());
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+        }
+        StringBuilder names = new StringBuilder();
+        for (android.net.Uri u : uris) {
+            String dest = importBios(u);
+            if (dest != null) names.append(dest).append(' ');
+        }
+        if (names.length() > 0) {
+            Toast.makeText(this, "Importado: " + names + "\nAbra o jogo de novo.", Toast.LENGTH_LONG).show();
+            restartApp();
+        } else {
+            if (!uris.isEmpty()) {
+                Toast.makeText(this, "Nenhum arquivo de BIOS/firmware reconhecido", Toast.LENGTH_LONG).show();
+            }
+            closeMenu();
+        }
+    }
+
+    /** Identifica o arquivo pelo tamanho (bios7 16 KB, bios9 4 KB, firmware 128/256/512 KB) e copia. */
+    private String importBios(android.net.Uri u) {
+        try {
+            byte[] data;
+            try (InputStream in = getContentResolver().openInputStream(u)) {
+                if (in == null) return null;
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] b = new byte[8192];
+                int n;
+                while ((n = in.read(b)) > 0) {
+                    bo.write(b, 0, n);
+                    if (bo.size() > (1 << 20)) return null;
+                }
+                data = bo.toByteArray();
+            }
+            String dest;
+            switch (data.length) {
+                case 16384: dest = "bios7.bin"; break;
+                case 4096: dest = "bios9.bin"; break;
+                case 131072:
+                case 262144:
+                case 524288: dest = "firmware.bin"; break;
+                default: return null;
+            }
+            try (OutputStream o = new FileOutputStream(new File(systemDir(), dest))) {
+                o.write(data);
+            }
+            return dest;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private void restartApp() {
+        finish();
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 600);
     }
 
     // ------------------------------------------------------------------ opcoes do nucleo
