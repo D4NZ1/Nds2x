@@ -359,6 +359,8 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             "Reiniciar o jogo",
             fastForward ? "Avanço rápido: ligado" : "Avanço rápido: desligado",
             "Ver log",
+            "JIT: " + optLabel("melonds_jit_enable") + " (reinicia)",
+            "Render em thread: " + optLabel("melonds_threaded_renderer") + " (reinicia)",
             "Sair do jogo"
         };
         AlertDialog d = new AlertDialog.Builder(this)
@@ -378,6 +380,12 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                             showLog();
                             return;
                         case 6:
+                            toggleOpt("melonds_jit_enable");
+                            return;
+                        case 7:
+                            toggleOpt("melonds_threaded_renderer");
+                            return;
+                        case 8:
                             finish();
                             return;
                         default:
@@ -388,6 +396,72 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 .setOnCancelListener(dialog -> closeMenu())
                 .create();
         d.show();
+    }
+
+    // ------------------------------------------------------------------ opcoes do nucleo
+    private File optionsFile() {
+        File ext = getExternalFilesDir(null);
+        return new File(ext != null ? ext : getFilesDir(), "core_options.txt");
+    }
+
+    private static String readAll(File f) {
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[4096];
+            int n;
+            while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+            return bo.toString("UTF-8");
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    private String optGet(String key) {
+        for (String line : readAll(optionsFile()).split("\n")) {
+            String t = line.trim();
+            int eq = t.indexOf('=');
+            if (!t.startsWith("#") && eq > 0 && t.substring(0, eq).trim().equals(key)) {
+                return t.substring(eq + 1).trim();
+            }
+        }
+        return null;
+    }
+
+    private String optLabel(String key) {
+        String v = optGet(key);
+        if (v == null) return "padrão";
+        return "disabled".equals(v) ? "desligado" : "ligado";
+    }
+
+    private void optSet(String key, String value) {
+        StringBuilder sb = new StringBuilder();
+        boolean done = false;
+        for (String line : readAll(optionsFile()).split("\n")) {
+            String t = line.trim();
+            int eq = t.indexOf('=');
+            if (!t.startsWith("#") && eq > 0 && t.substring(0, eq).trim().equals(key)) {
+                if (!done) sb.append(key).append(" = ").append(value).append('\n');
+                done = true;
+            } else if (!t.isEmpty()) {
+                sb.append(line).append('\n');
+            }
+        }
+        if (!done) sb.append(key).append(" = ").append(value).append('\n');
+        try (OutputStream o = new FileOutputStream(optionsFile())) {
+            o.write(sb.toString().getBytes("UTF-8"));
+        } catch (IOException e) {
+            Toast.makeText(this, "Não consegui salvar a opção", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Alterna a opcao e fecha o app de vez (o nucleo so le as opcoes ao iniciar). */
+    private void toggleOpt(String key) {
+        String cur = optGet(key);
+        optSet(key, "disabled".equals(cur) ? "enabled" : "disabled");
+        Toast.makeText(this, "Opção salva. Abra o jogo de novo.", Toast.LENGTH_LONG).show();
+        finish();
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 600);
     }
 
     private void showLog() {

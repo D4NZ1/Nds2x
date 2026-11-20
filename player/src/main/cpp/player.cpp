@@ -685,6 +685,11 @@ JNIEXPORT jboolean JNICALL Java_com_ndspack_player_Native_init(JNIEnv* env, jcla
         }
         game.data = romData.data();
         game.size = romData.size();
+        if (romData.size() > 0x20) {
+            flog("rom: %zu bytes, titulo=%.12s codigo=%.4s", romData.size(),
+                 reinterpret_cast<const char*>(romData.data()),
+                 reinterpret_cast<const char*>(romData.data()) + 0x0C);
+        }
     }
     if (!g_core.load_game(&game)) {
         LOGE("retro_load_game falhou");
